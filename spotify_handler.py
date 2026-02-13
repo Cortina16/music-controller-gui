@@ -22,31 +22,7 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
 
 def cover_photo(track_id):
     track = sp.track(track_id)
-    print(track['album']['images'][0]['url'])
     return track['album']['images'][0]['url']
-
-
-def get_important_information():
-    while True:
-        try:
-            playback = sp.current_playback()
-
-            if playback and playback.get('item'):
-                packet = {
-                    "artists" : [name["name"] for name in playback["item"]["artists"]]
-                }
-                return packet
-            else:
-                print('Waiting for active playback...')
-        except Exception as e:
-            print(e)
-        time.sleep(2)
-
-
-info = lambda x : threading.Thread(target=get_important_information).start()
-
-get_important_information()
-
 
 
 def skip():
@@ -81,26 +57,26 @@ def toggle_playback():
 
 
 class SpotifyListener(threading.Thread):
-    def __init__(self, callback, ):
+    def __init__(self, callback):
         super().__init__()
         self.callback = callback
         self.current_id = None
         self.daemon = True
 
     def run(self):
-        while True:
-            try:
-                playback = sp.current_playback()
+        try:
+            playback = sp.current_playback()
 
-                if playback and playback.get('item'):
-                    new_id = playback['item']['id']  # Use track ID, not album ID
+            if playback and playback.get('item'):
+                new_id = playback['item']['id']
 
-                    if new_id != self.current_id:
-                        self.current_id = new_id
-                        print(f"🎵 New Track: {playback['item']['name']}")
-                        self.callback(new_id, playback['progress_ms'])
-                else:
-                    print("Waiting for active playback...")
-            except Exception as e:
-                print(e)
-            time.sleep(4)
+                if new_id != self.current_id:
+                    self.current_id = new_id
+                    print(f"🎵 New Track: {playback['item']['name']}")
+                    a_list = [a["name"] for a in playback["item"]["artists"]]
+                    self.callback(new_id, playback['progress_ms'], a_list, playback["item"]["name"])
+            else:
+                print("Waiting for active playback...")
+        except Exception as e:
+            print(e)
+        time.sleep(4)

@@ -6,6 +6,8 @@ import time
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify, send_file, Response, json
 
+
+from websocket_interact.websocket_interact import WebsocketInteract as ws_handler
 import spotify_handler as spotify
 import lyrics_handler
 
@@ -45,8 +47,7 @@ def unified_stream():
 
 @app.route('/api/songs/skip')
 def skip_song():
-    spotify.skip()
-    {"Success"}, 200
+    return {"message" : "Success"}, 200 if spotify.skip() else {"message":"FAILED"}, 200
 
 
 @app.route('/api/songs/previous')
@@ -64,13 +65,15 @@ def pause_playback():
 def unpause():
     spotify.unpause()
     return {"Success"}, 200
+
+
 @app.route('/api/songs/toggle-playback')
 def toggle_playback():
     spotify.toggle_playback()
     return {"Success"}, 200
 
 
-def on_song_change(new_id, progress):
+def on_song_change(new_id, progress, artists, song_name):
     lyrics = lyrics_handler.get_song_lyrics(new_id)
     with open("lyrics_out.json", "w") as file:
         json.dump(lyrics, file, indent=4)
@@ -83,6 +86,8 @@ def on_song_change(new_id, progress):
     else:
         base64_cover = None
     packet = {
+        "arist_name": artists,
+        "song_name": song_name,
         "song_id": new_id,
         "lyrics": lyrics,
         "progress": progress + time.time(),
@@ -93,7 +98,7 @@ def on_song_change(new_id, progress):
 
 
 if __name__ == '__main__':
-    lyrical_listener = spotify.SpotifyListener(on_song_change)
-    lyrical_listener.start()
+    lyrical_listener = ws_handler(on_song_change)
+    lyrical_listener.run()
 
     app.run(debug=True, port=5000)
