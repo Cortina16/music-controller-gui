@@ -15,7 +15,14 @@ load_dotenv()
 app = Flask(__name__)
 update_queue = queue.Queue()
 
+listeners = []
 
+def announce(packet):
+    for q in list(listeners):
+        try:
+            q.put_nowait(packet)
+        except queue.Full:
+            pass
 @app.route('/api/songs/<song_id>/lyrics', methods=['GET'])
 def get_lyrics(song_id):
     data = lyrics_handler.get_song_lyrics(song_id)
@@ -38,9 +45,17 @@ def get_cover(song_id):
 @app.route('/api/songs/out-stream.json')
 def unified_stream():
     def event_stream():
-        while True:
-            packet = update_queue.get()
-            yield f"data: {json.dumps(packet)}\n\n"
+        update_queue = queue.Queue()
+        listeners.append(update_queue)
+        try:
+            while True:
+                try:
+                    packet = update_queue.get(timeout=20)
+                    yield f"data: {json.dumps(packet)}\n\n"
+                except queue.Empty:
+                    yield ": heartbeat\n\n"
+        except GeneratorExit:
+            listeners.remove(update_queue)
 
     return Response(event_stream(), mimetype="text/event-stream")
 
@@ -91,14 +106,15 @@ def on_song_change(new_id, progress, artists, song_name):
         "song_id": new_id,
         "lyrics": lyrics,
         "progress": progress + time.time(),
-        "base64_cover": base64_cover
+        "base64_cover": f"data:image/jpeg;base64,{base64_cover}"
 
     }
-    update_queue.put(packet)
+    announce(packet)
 
+lyrical_listener = ws_handler(on_song_change)
+lyrical_listener.run_in_background()
 
 if __name__ == '__main__':
-    lyrical_listener = ws_handler(on_song_change)
-    lyrical_listener.run()
+
 
     app.run(debug=True, port=5000)

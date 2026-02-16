@@ -7,23 +7,34 @@ import uuid
 import logging
 import asyncio
 
-
 from . import access_token
-
 
 
 class WebsocketInteract:
 
     def __init__(self, callback):
-        self.token = asyncio.run(access_token.snipe_token())
+        self.token = None
         self.device_id = str(uuid.uuid4()).replace('-', '')
         self.wss_url = f"wss://guc3-dealer.spotify.com/?access_token="
         self.connection_id = None
         self.ws = None
         self.current_id = None
         self.callback = callback
-
+        self.is_running = False
         self.ws_headers = {"Origin": "https://open.spotify.com"}
+        threading.Thread(target=self._initialize_token, daemon=True).start()
+
+    def _initialize_token(self):
+        #fixme: i don't think it works after an hour, so make it work after an hour. now it might i really got no idea i made this at 3 am so only god knows whether it works
+        """Threaded function to run the async sniper."""
+        print("[*] Launching background browser to snipe token...") # call the thing to hijack spotify's access token. please nobody from spotify see this
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            self.token = loop.run_until_complete(access_token.snipe_token())
+            print("[+] Token sniped successfully.")
+        except Exception as e:
+            print(f"[-] Failed to snipe token: {e}")
 
     def register_device(self, connection_id):
         print(f"[*] Registering device {self.device_id} with Connection ID: {connection_id[:10]}...")
@@ -51,7 +62,7 @@ class WebsocketInteract:
         try:
             response = requests.put(url, headers=headers, json=payload)
             if response.status_code == 200:
-                print("[+] Device registered successfully! You should start seeing updates.")
+                print("[+] Device registered successfully!")
             else:
                 print(f"[-] Registration failed: {response.status_code} {response.text}")
         except Exception as e:
@@ -71,19 +82,24 @@ class WebsocketInteract:
                 if "cluster" in payload:
                     update_reason = payload["cluster"].get("update_reason")
                     if update_reason:
+                        #fixme: make this run so i don't use this jank shit below
+                        print('valid update reason')
                         self._pass_out()
                     player_state = payload["cluster"].get("player_state", {})
                     track = player_state.get("track", {}).get("metadata", {})
 
                     if track:
-                        print(f"\n[Now Playing] {track.get('title')} - {track.get('artist_name')}")
+                        #fixme: make this jank shit less jank and more reliable becuase I DON'T TRUST IT
+                        self._pass_out()
+
+                        print(f"\n[Now Playing] {track.get('title')}")
                         print(f"Paused: {player_state.get('is_paused')}")
         else:
-            # Print other messages (pong, etc.)
-            # print(message)
             pass
+
     def _pass_out(self):
         from spotify_handler import sp
+
         try:
             playback = sp.current_playback()
 
@@ -92,8 +108,9 @@ class WebsocketInteract:
 
                 if new_id != self.current_id:
                     self.current_id = new_id
-                    print(f"🎵 New Track: {playback['item']['name']}")
+                    print(f"New Track: {playback['item']['name']}")
                     a_list = [a["name"] for a in playback["item"]["artists"]]
+                    print('calling callback') #i know i can read (i don't know why i put this here)
                     self.callback(new_id, playback['progress_ms'], a_list, playback["item"]["name"])
             else:
                 print("Waiting for active playback...")
@@ -102,6 +119,7 @@ class WebsocketInteract:
 
     def _on_open(self, ws):
         print("Connected to Spotify Dealer!")
+
         def run():
             while True:
                 time.sleep(30)
@@ -109,12 +127,16 @@ class WebsocketInteract:
                     ws.send(json.dumps({"type": "ping"}))
                 except:
                     break
+
         threading.Thread(target=run, daemon=True).start()
 
     def _on_error(self, error, another_thing):
         logging.error(f"[-] Error: {error}, {another_thing} connection closed. Attempting to resuscitate...")
+
     def _on_close(self, close_status_code, close_msg):
-        logging.warning(f"[-] Connection closed with status {close_status_code}, and message: {close_msg}. Attempting to resuscitate...")
+        logging.warning(
+            f"[-] Connection closed with status {close_status_code}, and message: {close_msg}. Attempting to resuscitate...")
+
     #     for i in range(10):
     #         self.ws = websocket.WebSocketApp(WSS_URL,
     #                                          header=self.headers,
@@ -125,7 +147,21 @@ class WebsocketInteract:
     #         if self.ws.last_ping_tm > 3:
     #             return
 
+    def run_in_background(self):
+        """Starts the WebSocket on a new dedicated thread."""
+
+        if self.is_running:
+            return
+
+        self.is_running = True
+        self.bg_thread = threading.Thread(target=self.run, daemon=True)
+        self.bg_thread.start()
+        print("[*] WebSocket thread launched.")
+
     def run(self):
+        while not self.token:
+            time.sleep(1)
+
         retry_count = 0
         max_retries = 10
 

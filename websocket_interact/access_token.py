@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 
 
-# Configuration
+# conf
 load_dotenv()
 SP_DC = os.getenv("SP_DC_COOKIE")
 TARGET_URL = "https://open.spotify.com/"
@@ -33,7 +33,7 @@ async def snipe_token():
                     json_data = await response.json()
                     if "accessToken" in json_data:
                         token = json_data["accessToken"]
-                        print(f"[+] Sniped Access Token: {token[:50]}...")
+                        print(f"[+] Sniped Access Token")
                         return token
                 except:
                     pass
@@ -49,7 +49,3 @@ async def snipe_token():
 
         await browser.close()
         return token
-
-
-if __name__ == "__main__":
-    asyncio.run(snipe_token())
